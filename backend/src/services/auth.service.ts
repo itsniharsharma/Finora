@@ -14,35 +14,25 @@ import { signJwtToken } from "../utils/jwt";
 export const registerService = async (body: RegisterSchemaType) => {
   const { email } = body;
 
-  const session = await mongoose.startSession();
+  const existingUser = await UserModel.findOne({ email });
+  if (existingUser) throw new UnauthorizedException("User already exists");
 
-  try {
-    await session.withTransaction(async () => {
-      const existingUser = await UserModel.findOne({ email }).session(session);
-      if (existingUser) throw new UnauthorizedException("User already exists");
+  const newUser = new UserModel({
+    ...body,
+  });
 
-      const newUser = new UserModel({
-        ...body,
-      });
+  await newUser.save();
 
-      await newUser.save({ session });
+  const reportSetting = new ReportSettingModel({
+    userId: newUser._id,
+    frequency: ReportFrequencyEnum.MONTHLY,
+    isEnabled: true,
+    nextReportDate: calulateNextReportDate(),
+    lastSentDate: null,
+  });
+  await reportSetting.save();
 
-      const reportSetting = new ReportSettingModel({
-        userId: newUser._id,
-        frequency: ReportFrequencyEnum.MONTHLY,
-        isEnabled: true,
-        nextReportDate: calulateNextReportDate(),
-        lastSentDate: null,
-      });
-      await reportSetting.save({ session });
-
-      return { user: newUser.omitPassword() };
-    });
-  } catch (error) {
-    throw error;
-  } finally {
-    await session.endSession();
-  }
+  return { user: newUser.omitPassword() };
 };
 
 export const loginService = async (body: LoginSchemaType) => {
